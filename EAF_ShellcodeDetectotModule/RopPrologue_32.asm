@@ -1,8 +1,75 @@
 .486
 .MODEL FLAT, STDCALL
 OPTION CASEMAP :NONE
+OPTION PROLOGUE	:SaveFreedStack_Prologue
+OPTION EPILOGUE	: SaveFreedStack_Epilogue
 
 _ValidateCallAgainstRop PROTO SYSCALL
+
+.DATA
+
+; User-defined prologue
+
+SaveFreedStack_Prologue MACRO procname, flags, argbytes, localbytes, reglist, userparms:VARARG
+    sub esp, 40h ; Save the unused stack for further checking
+	IF localbytes GT 0
+        push    ebp
+        mov     ebp, esp
+		add		ebp, 40h ; Fix ebp
+        sub     esp, localbytes
+    ELSEIF argbytes GT 0
+        push    ebp
+        mov     ebp, esp
+		add		ebp, 40h ; Fix ebp
+    ELSEIFNB <userparms>
+      IF @InStr(1, <userparms>, <FORCEFRAME>)
+        push    ebp
+        mov     ebp, esp
+		add		ebp, 40h ; Fix ebp
+      ENDIF
+    ENDIF
+
+    ;; USES clause
+    IFNB <reglist>
+        FOR reg,reglist
+            push reg
+        ENDM
+    ENDIF
+
+    EXITM <localbytes>
+ENDM
+
+; User-defined epilogue
+
+SaveFreedStack_Epilogue MACRO procname, flags, argbytes, localbytes, reglist, userparms:VARARG
+    ;; USES clause
+    IFNB <reglist>
+        FOR reg,reglist
+            pop reg
+        ENDM
+    ENDIF
+
+    IF (argbytes GT 0) OR (localbytes GT 0)
+		sub		ebp, 40h
+        leave
+		add		esp, 40h
+    ELSEIFNB <userparms>
+      IF @InStr(1,<userparms>,<FORCEFRAME>)
+		sub		ebp, 40h
+        leave
+		add		esp, 40h
+      ENDIF
+    ENDIF
+
+    IF flags AND 10h
+        ;; caller will restore stack
+        retn 0
+    ELSE
+        ;; callee must restore stack
+        retn argbytes
+    ENDIF
+ENDM
+
 
 .FARDATA
 EXTERN VirtualAlloc_	:DWORD
@@ -16,6 +83,11 @@ EXTERN HeapCreate_		:DWORD
 .CODE
 
 HookedVirtualAlloc PROC lpAddress:DWORD, dwSize:DWORD, flAllocationType:DWORD, flProtect:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	xor		eax, eax 
 	push	eax		; flProtect
 	push	eax		; lpAddress
@@ -37,6 +109,11 @@ HookedVirtualAlloc PROC lpAddress:DWORD, dwSize:DWORD, flAllocationType:DWORD, f
 HookedVirtualAlloc ENDP
 
 HookedVirtualAllocEx PROC hProcess:DWORD, lpAddress:DWORD, dwSize:DWORD, flAllocationType:DWORD, flProtect:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	xor		eax, eax 
 	push	eax		; flProtect
 	push	eax  	; lpAddress
@@ -60,6 +137,11 @@ HookedVirtualAllocEx PROC hProcess:DWORD, lpAddress:DWORD, dwSize:DWORD, flAlloc
 HookedVirtualAllocEx ENDP
 
 HookedVirtualProtect PROC lpAddress:DWORD, dwSize:DWORD, flNewProtect:DWORD, lpflOldProtect:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	mov		eax, DWORD PTR [flNewProtect]  
 	push	eax								; flProtect
 	mov		ecx, DWORD PTR [lpAddress]  	
@@ -82,6 +164,11 @@ HookedVirtualProtect PROC lpAddress:DWORD, dwSize:DWORD, flNewProtect:DWORD, lpf
 HookedVirtualProtect ENDP
 
 HookedVirtualProtectEx PROC hProcess:DWORD, lpAddress:DWORD, dwSize:DWORD, flNewProtect:DWORD, lpflOldProtect:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	mov		eax, DWORD PTR [flNewProtect]  
 	push	eax								; flProtect
 	mov		ecx, DWORD PTR [lpAddress]  
@@ -106,6 +193,11 @@ HookedVirtualProtectEx PROC hProcess:DWORD, lpAddress:DWORD, dwSize:DWORD, flNew
 HookedVirtualProtectEx ENDP
 
 HookedMapViewOfFile PROC hFileMappingObject:DWORD, dwDesiredAccess:DWORD, dwFileOffsetHigh:DWORD, dwFileOffsetLow:DWORD, dwNumberOfBytesToMap:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	xor		eax, eax 
 	push	eax		
 	push	eax
@@ -129,6 +221,11 @@ HookedMapViewOfFile PROC hFileMappingObject:DWORD, dwDesiredAccess:DWORD, dwFile
 HookedMapViewOfFile ENDP
 
 HookedMapViewOfFileEx PROC hFileMappingObject:DWORD, dwDesiredAccess:DWORD, dwFileOffsetHigh:DWORD, dwFileOffsetLow:DWORD, dwNumberOfBytesToMap:DWORD, lpBaseAddress:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	xor		eax, eax 
 	push	eax
 	mov		ecx, DWORD PTR [lpBaseAddress]  
@@ -155,6 +252,11 @@ HookedMapViewOfFileEx PROC hFileMappingObject:DWORD, dwDesiredAccess:DWORD, dwFi
 HookedMapViewOfFileEx ENDP
 
 HookedHeapCreate PROC flOptions:DWORD, dwInitialSize:DWORD, dwMaximumSize:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
 	xor		eax, eax 
 	push	eax
 	push	eax

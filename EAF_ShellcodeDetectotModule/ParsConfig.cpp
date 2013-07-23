@@ -166,7 +166,7 @@ ParsRegConfig(
 			}			
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "PivotDetection") ) 
 			{
-				pMcedpRegConfig->ROP.PIVOTE_DETECTION = *pdwFlag;
+				pMcedpRegConfig->ROP.PIVOT_DETECTION = *pdwFlag;
 			}			
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "PivotThreshold") ) 
 			{

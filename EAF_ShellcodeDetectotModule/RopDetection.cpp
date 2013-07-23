@@ -9,7 +9,12 @@ ValidateCallAgainstRop(
 	IN ULONG_PTR lpEspAddress,
 	IN ROP_CALLEE RopCallee,
 	IN LPVOID lpAddress, 
-	IN DWORD flProtect
+	IN DWORD flProtect,
+	IN ULONG uEax,
+	IN ULONG uEcx,
+	IN ULONG uEdx,
+	IN ULONG uEbx,
+	IN ULONG uEsi
 	)
 {
 	PNT_TIB ThreadInfo;
@@ -49,14 +54,137 @@ ValidateCallAgainstRop(
 			}
 		}
 
-		if ( MCEDP_REGCONFIG.ROP.PIVOTE_DETECTION )
+		if ( MCEDP_REGCONFIG.ROP.PIVOT_DETECTION )
 		{
 			/* NOT IMPLEMENTED */
 		}
 
 		if ( MCEDP_REGCONFIG.ROP.CALL_VALIDATION )
 		{
-			/* NOT IMPLEMENTED */
+			/*
+			 * Performing following checks on the callsite
+			 *  - The address of [esp - 4] could not be the starting address of current function,
+			 *	  otherwise this function is reached via retn instead of a call
+			 *	- The returning point must points to an executable space
+			 *  - A 'call' instruction should be existing preceeding to the returning point
+			 *  - Under most cases, the 'call' instruction should (in)directly points to the start
+			 *	  of current function
+			 */
+
+			ULONG_PTR* lpPreviousStackPointer = (ULONG_PTR*)(lpEspAddress - sizeof(ULONG));
+			if(*lpPreviousStackPointer == 
+				(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
+			{
+				/* Set ROP flag */
+				DbgSetRopFlag();
+				DEBUG_PRINTF(LDBG, NULL, "ROP detected by CALL_VALIDATION, "
+					"the address before [esp] points to function start."
+					" [esp] = 0x%x, FunctionStart = 0x%x\n", *lpPreviousStackPointer, GetCriticalFunctionAddress(RopCallee));
+			}
+
+			ULONG_PTR lpReturningAddress = *(ULONG_PTR*)lpEspAddress;
+			
+			// TODO: Cache it!
+			MEMORY_BASIC_INFORMATION MemInfo = {0};
+			if(!VirtualQuery((VOID*)lpReturningAddress, &MemInfo, sizeof(MemInfo)))
+			{
+				DEBUG_PRINTF(LDBG, NULL, "Error in calling VirtualQuery() in ValidateCallAgainstRop().\n");
+			}
+			else
+			{
+				if(!((MemInfo.Protect & PAGE_EXECUTE) ||
+					(MemInfo.Protect & PAGE_EXECUTE_READ) ||
+					(MemInfo.Protect & PAGE_EXECUTE_READWRITE) ||
+					(MemInfo.Protect & PAGE_EXECUTE_WRITECOPY)))
+				{
+					// The target page cannot be executed
+					DbgSetRopFlag();
+					DEBUG_PRINTF(LDBG, NULL, "ROP detected by CALL_VALIDATION, "
+						"the returning address cannot be executed.");
+				}
+			}
+			
+			// Is there a call instruction preceeding to the returning address?
+			// - 'call dword ptr [0xC0DEC0DE]' (6 bytes)
+			// - 'call 0xC0DEC0DE' (5 bytes)
+			// - 'call <reg>' (2 bytes)
+			BOOL bCheckPassed = FALSE;
+
+			if(*(WORD*)(lpReturningAddress - 6) == 0x15ff)
+			{
+				ULONG_PTR lpCallingTarget = *(*(ULONG_PTR**)(lpReturningAddress - 4));
+				if(lpCallingTarget == 
+					(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
+				{
+					bCheckPassed = TRUE;
+				}
+				else
+				{
+					/* We don't set the ROP flag here, as it might be a call eax instruction */
+				}
+			}
+
+			if(!bCheckPassed && 
+				*(BYTE*)(lpReturningAddress - 5) == 0xeb)
+			{
+				ULONG_PTR lpCallingTarget = *(ULONG_PTR*)(lpReturningAddress - 4);
+				if(lpCallingTarget == 
+					(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
+				{
+					bCheckPassed = TRUE;
+				}
+				else
+				{
+					/* We don't set the ROP flag here, as it might be a call eax instruction */
+				}
+			}
+
+			if(!bCheckPassed &&
+				*(BYTE*)(lpReturningAddress - 2) == 0xff)
+			{
+				BYTE TargetReg = *(BYTE*)(lpReturningAddress - 1);
+				ULONG_PTR lpCallingTarget;
+				switch(TargetReg)
+				{
+				case 0xd0:
+					/* eax */
+					lpCallingTarget = uEax;
+					break;
+				case 0xd1:
+					/* ecx */
+					lpCallingTarget = uEcx;
+					break;
+				case 0xd2:
+					/* edx */
+					lpCallingTarget = uEdx;
+					break;
+				case 0xd3:
+					/* ebx */
+					lpCallingTarget = uEbx;
+					break;
+				case 0xd6:
+					/* esi */
+					lpCallingTarget = uEsi;
+					break;
+				default:
+					lpCallingTarget = 0xffffffff;
+					break;
+				}
+				if(lpCallingTarget == 
+					(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
+				{
+					bCheckPassed = TRUE;
+				}
+			}
+
+			if(!bCheckPassed)
+			{
+				/* Set ROP flag */
+				DbgSetRopFlag();
+				DEBUG_PRINTF(LDBG, NULL, "ROP detected by CALL_VALIDATION, "
+					"the returning address %08x is not preceeded by a valid call instruction.",
+					lpReturningAddress);
+			}
 		}
 
 		if ( MCEDP_REGCONFIG.ROP.FORWARD_EXECUTION )
@@ -67,7 +195,7 @@ ValidateCallAgainstRop(
 		if ( DbgGetRopFlag() == MCEDP_STATUS_ROP_FLAG_SET )
 		{
 			if ( MCEDP_REGCONFIG.ROP.DUMP_ROP )
-				DbgReportRop((PVOID)lpEspAddress,RopCallee);
+				DbgReportRop((PVOID)lpEspAddress, RopCallee);
 
 			if ( MCEDP_REGCONFIG.ROP.KILL_ROP)
 				TerminateProcess(GetCurrentProcess(), STATUS_ACCESS_VIOLATION);
@@ -238,4 +366,34 @@ DbgReportRop(
 	}
 
 	LocalFree(szRopInst);
+}
+
+FARPROC
+GetCriticalFunctionAddress(
+	IN ROP_CALLEE RopCallee
+	)
+{
+	// TODO: Make it a table-lookup approach
+	HMODULE hModule = LoadLibrary("Kernel32.dll");
+	switch(RopCallee)
+	{
+	case CalleeVirtualAlloc:
+		return GetProcAddress(hModule, "VirtualAlloc");
+	case CalleeVirtualAllocEx:
+		return GetProcAddress(hModule, "VirtualAllocEx");
+	case CalleeVirtualProtect:
+		return GetProcAddress(hModule, "VirtualProtect");
+	case CalleeVirtualProtectEx:
+		return GetProcAddress(hModule, "VirtualProtectEx");
+	case CalleeMapViewOfFile:
+		return GetProcAddress(hModule, "MapViewOfFile");
+	case CalleeMapViewOfFileEx:
+		return GetProcAddress(hModule, "MapViewOfFileEx");
+	case CalleeHeapCreate:
+		return GetProcAddress(hModule, "HeapCreate");
+	case CalleeWriteProcessMemory:
+		return GetProcAddress(hModule, "WriteProcessMemory");
+	default:
+		return NULL;
+	}
 }

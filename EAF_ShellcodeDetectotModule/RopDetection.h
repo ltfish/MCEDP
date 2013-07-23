@@ -28,7 +28,12 @@ ValidateCallAgainstRop(
 	IN ULONG_PTR lpEspAddress,
 	IN ROP_CALLEE RopCallee,
 	IN LPVOID lpAddress, 
-	IN DWORD flProtect
+	IN DWORD flProtect,
+	IN ULONG uEax,
+	IN ULONG uEcx,
+	IN ULONG uEdx,
+	IN ULONG uEbx,
+	IN ULONG uEsi
 	);
 
 STATUS
@@ -52,4 +57,9 @@ VOID
 DbgReportRop(
 	IN CONST PVOID Address,
 	IN CONST DWORD APINumber
+	);
+
+FARPROC
+GetCriticalFunctionAddress(
+	IN ROP_CALLEE RopCallee
 	);
