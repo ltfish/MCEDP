@@ -1,4 +1,5 @@
 #include "Hook.h"
+#include "RopDetection.h"
 
 extern "C" /* ROP detection hooks */
 {
@@ -16,7 +17,16 @@ extern "C" /* ROP detection hooks */
 	PVOID MapViewOfFileEx_ = (PVOID)MapViewOfFileEx;
 	/* static  HANDLE (WINAPI *HeapCreate_			   )(DWORD flOptions, SIZE_T dwInitialSize, SIZE_T dwMaximumSize) = HeapCreate; */
 	PVOID HeapCreate_ = (PVOID)HeapCreate;
+
+	PVOID KiFastSystemCall_ = NULL; /* It will be initialized later on */
+
+	PVOID NtAllocateVirtualMemory_7600 = (PVOID)NtAllocateVirtualMemory_7600_;
+
+	PVOID NtProtectVirtualMemory_7600 = (PVOID)NtProtectVirtualMemory_7600_;
 }
+
+#define SYSCALL_NTALLOCATEVIRTUALMEMORY_7600	19
+#define SYSCALL_NTPROTECTVIRTUALMEMORY_7600		215
 
 STATUS
 HookInstall(
@@ -33,9 +43,10 @@ HookInstall(
 	/* CreateProcess should be hooked regardless of what type of protection is enabled */
 	DetourAttach(&(PVOID&)CreateProcessInternalW_		, HookedCreateProcessInternalW);
 
-    /* Hook virtual memory manipulation function needs for checking rop attacks */
+	/* Hook virtual memory manipulation function needs for checking rop attacks */
 	if ( MCEDP_REGCONFIG.ROP.DETECT_ROP )
 	{
+		/* All APIs */
 		DetourAttach(&(PVOID&)VirtualAlloc_				, HookedVirtualAlloc);
 		DetourAttach(&(PVOID&)VirtualAllocEx_			, HookedVirtualAllocEx);
 		DetourAttach(&(PVOID&)VirtualProtect_			, HookedVirtualProtect);
@@ -43,6 +54,11 @@ HookInstall(
 		DetourAttach(&(PVOID&)MapViewOfFile_			, HookedMapViewOfFile);
 		DetourAttach(&(PVOID&)MapViewOfFileEx_			, HookedMapViewOfFileEx);
 		DetourAttach(&(PVOID&)HeapCreate_				, HookedHeapCreate);
+
+		/* We wanna hook KiFastSystemCall() as well */
+		/* Load the address of KiFastSystemCall */
+		KiFastSystemCall_ = *(PVOID*)0x7ffe0300;
+		HookKiFastSystemCall(KiFastSystemCall_		, HookedKiFastSystemCall_7600);
 	}
 
     /* Hook CreateThread if ETA_VALIDATION protection is set on */
@@ -705,4 +721,97 @@ Hookedrecv(
 	}
 
 	return (recv_( s, buf, len, flags));
+}
+
+VOID
+HookKiFastSystemCall(
+	PVOID FuncAddr, 
+	PVOID NewFuncAddr
+	)
+{
+	DWORD dwOldProtect;
+	DWORD dwFuncAddr = (DWORD)FuncAddr;
+
+	VirtualProtect((LPVOID)(dwFuncAddr - 0xa),
+		100,
+		PAGE_EXECUTE_READWRITE,
+		&dwOldProtect);
+
+	*((WORD*)dwFuncAddr) = 0xf4eb; // jmp short 0xf4
+	*((BYTE*)(dwFuncAddr - 0xa)) = 0xe9; // jmp far
+	*((DWORD*)(dwFuncAddr - 0x9)) = 
+		(DWORD)NewFuncAddr - (dwFuncAddr - 0xa) - 5;
+}
+
+VOID
+__declspec(naked)
+KiFastSystemCall(
+	VOID)
+{
+	__asm
+	{
+		mov edx, esp
+		/* sysenter */
+		__emit 0x0f
+		__emit 0x34
+		retn
+	}
+}
+
+VOID
+__declspec(naked)
+HookedKiFastSystemCall_7600(
+	VOID
+	)
+{
+	__asm
+	{
+		/* filter our target syscalls */
+		cmp eax, SYSCALL_NTALLOCATEVIRTUALMEMORY_7600
+		je NTALLOCATEVIRTUALMEMORY
+		cmp eax, SYSCALL_NTPROTECTVIRTUALMEMORY_7600
+		je NTPROTECTVIRTUALMEMORY
+		jmp KiFastSystemCall
+NTALLOCATEVIRTUALMEMORY:
+		jmp HookedNtAllocateVirtualMemory_7600
+NTPROTECTVIRTUALMEMORY:
+		jmp HookedNtProtectVirtualMemory_7600
+	}
+}
+
+__declspec(naked) 
+NTSTATUS
+NTAPI 
+NtAllocateVirtualMemory_7600_(
+	IN HANDLE ProcessHandle,
+	IN OUT PVOID *BaseAddress,
+	IN PULONG ZeroBits,
+	IN OUT PSIZE_T RegionSize,
+	IN ULONG AllocationType,
+	IN ULONG Protect)
+{
+	__asm
+	{
+		mov eax, SYSCALL_NTALLOCATEVIRTUALMEMORY_7600
+		call KiFastSystemCall
+		retn 0x18
+	}
+}
+
+__declspec(naked) 
+NTSTATUS
+NTAPI 
+NtProtectVirtualMemory_7600_(
+	IN HANDLE ProcessHandle,
+	IN OUT PVOID *BaseAddress,
+	IN OUT PULONG NumberOfBytesToProtect,
+	IN ULONG NewAccessProtection,
+	OUT PULONG OldAccessProtection)
+{
+	__asm
+	{
+		mov eax, SYSCALL_NTPROTECTVIRTUALMEMORY_7600
+		call KiFastSystemCall
+		ret 0x14
+	}
 }

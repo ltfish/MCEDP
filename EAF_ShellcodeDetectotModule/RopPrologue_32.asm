@@ -4,7 +4,7 @@ OPTION CASEMAP :NONE
 OPTION PROLOGUE	:SaveFreedStack_Prologue
 OPTION EPILOGUE	: SaveFreedStack_Epilogue
 
-_ValidateCallAgainstRop PROTO SYSCALL
+_ValidateCallAgainstRop			PROTO SYSCALL
 
 .DATA
 
@@ -79,6 +79,8 @@ EXTERN VirtualProtectEx_:DWORD
 EXTERN MapViewOfFile_	:DWORD
 EXTERN MapViewOfFileEx_	:DWORD
 EXTERN HeapCreate_		:DWORD
+EXTERN NtAllocateVirtualMemory_7600	:DWORD
+EXTERN NtProtectVirtualMemory_7600	:DWORD
 
 .CODE
 
@@ -95,7 +97,7 @@ HookedVirtualAlloc PROC lpAddress:DWORD, dwSize:DWORD, flAllocationType:DWORD, f
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h
+	add		esp, 24h
 	mov		edx, DWORD PTR [flProtect]
 	push	edx  
 	mov		eax, DWORD PTR [flAllocationType]  
@@ -121,7 +123,7 @@ HookedVirtualAllocEx PROC hProcess:DWORD, lpAddress:DWORD, dwSize:DWORD, flAlloc
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h
+	add		esp, 24h
 	mov		eax, DWORD PTR [flProtect]  
 	push	eax  
 	mov		ecx, DWORD PTR [flAllocationType]  
@@ -150,7 +152,7 @@ HookedVirtualProtect PROC lpAddress:DWORD, dwSize:DWORD, flNewProtect:DWORD, lpf
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress						; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h
+	add		esp, 24h
 	mov		edx, DWORD PTR [lpflOldProtect]
 	push	edx  
 	mov		eax, DWORD PTR [flNewProtect]  
@@ -177,7 +179,7 @@ HookedVirtualProtectEx PROC hProcess:DWORD, lpAddress:DWORD, dwSize:DWORD, flNew
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h
+	add		esp, 24h
 	mov		eax, DWORD PTR [lpflOldProtect]  
 	push	eax  
 	mov		ecx, DWORD PTR [flNewProtect]  
@@ -205,7 +207,7 @@ HookedMapViewOfFile PROC hFileMappingObject:DWORD, dwDesiredAccess:DWORD, dwFile
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h
+	add		esp, 24h
 	mov		eax, DWORD PTR [dwNumberOfBytesToMap]  
 	push	eax  
 	mov		ecx, DWORD PTR [dwFileOffsetLow]  
@@ -234,7 +236,7 @@ HookedMapViewOfFileEx PROC hFileMappingObject:DWORD, dwDesiredAccess:DWORD, dwFi
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h
+	add		esp, 24h
 	mov		eax, DWORD PTR [lpBaseAddress]  
 	push	eax  
 	mov		ecx, DWORD PTR [dwNumberOfBytesToMap]  
@@ -264,7 +266,7 @@ HookedHeapCreate PROC flOptions:DWORD, dwInitialSize:DWORD, dwMaximumSize:DWORD
 	lea		edx, [ebp+4]
 	push	edx	; lpEspAddress
 	call	_ValidateCallAgainstRop
-	add		esp, 10h 
+	add		esp, 24h 
 	mov		eax, DWORD PTR [dwMaximumSize]  
 	push	eax  
 	mov		ecx, DWORD PTR [dwInitialSize]  
@@ -274,5 +276,64 @@ HookedHeapCreate PROC flOptions:DWORD, dwInitialSize:DWORD, dwMaximumSize:DWORD
 	call	HeapCreate_  
 	ret		0Ch 
 HookedHeapCreate ENDP
+
+
+_HookedNtAllocateVirtualMemory_7600 PROC SYSCALL RetnAddr:DWORD, ProcessHandle:DWORD, BaseAddress:DWORD, ZeroBits:DWORD, RegionSize:DWORD, AllocationType:DWORD, Protect:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
+	xor		eax, eax 
+	push	eax		; flProtect
+	push	eax		; lpAddress
+	push	8		; RopCallee: CalleeNtAllocateVirtualMemory
+	lea		edx, [ebp+4]
+	push	edx	; lpEspAddress
+	call	_ValidateCallAgainstRop
+	add		esp, 24h
+	mov		edx, DWORD PTR [Protect]
+	push	edx  
+	mov		eax, DWORD PTR [AllocationType]  
+	push	eax  
+	mov		ecx, DWORD PTR [RegionSize]  
+	push	ecx  
+	mov		edx, DWORD PTR [ZeroBits]  
+	push	edx  
+	mov		edx, DWORD PTR [BaseAddress]  
+	push	edx  
+	mov		edx, DWORD PTR [ProcessHandle]  
+	push	edx  
+	call	NtAllocateVirtualMemory_7600
+	ret
+_HookedNtAllocateVirtualMemory_7600 ENDP
+
+_HookedNtProtectVirtualMemory_7600 PROC SYSCALL RetnAddr:DWORD, ProcessHandle:DWORD, BaseAddress:DWORD, NumberOfBytesToProtect:DWORD, NewAccessProtection:DWORD, OldAccessProtection:DWORD
+	push	esi
+	push	ebx
+	push	edx
+	push	ecx
+	push	eax
+	xor		eax, eax 
+	push	eax		; flProtect
+	push	eax		; lpAddress
+	push	9		; RopCallee: CalleeNtProtectVirtualMemory
+	lea		edx, [ebp+4]
+	push	edx	; lpEspAddress
+	call	_ValidateCallAgainstRop
+	add		esp, 24h
+	mov		edx, DWORD PTR [OldAccessProtection]
+	push	edx  
+	mov		eax, DWORD PTR [NewAccessProtection]  
+	push	eax  
+	mov		ecx, DWORD PTR [NumberOfBytesToProtect]  
+	push	ecx  
+	mov		edx, DWORD PTR [BaseAddress]  
+	push	edx  
+	mov		edx, DWORD PTR [ProcessHandle]  
+	push	edx  
+	call	NtProtectVirtualMemory_7600
+	ret
+_HookedNtProtectVirtualMemory_7600 ENDP
 
 END

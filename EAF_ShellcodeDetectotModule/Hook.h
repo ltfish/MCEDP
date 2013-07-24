@@ -233,3 +233,60 @@ Hookedrecv(
 	int len,
 	int flags
 	);
+
+/*
+ * System calls
+ *
+ */
+
+VOID
+HookKiFastSystemCall(
+	PVOID FuncAddr, 
+	PVOID NewFuncAddr
+	);
+
+extern "C"
+VOID
+HookedKiFastSystemCall_7600(
+	VOID
+	);
+
+NTSTATUS
+NTAPI 
+NtAllocateVirtualMemory_7600_(
+	IN HANDLE ProcessHandle,
+	IN OUT PVOID *BaseAddress,
+	IN PULONG ZeroBits,
+	IN OUT PSIZE_T RegionSize,
+	IN ULONG AllocationType,
+	IN ULONG Protect
+	);
+
+NTSTATUS
+NTAPI 
+NtProtectVirtualMemory_7600_(
+	IN HANDLE ProcessHandle,
+	IN OUT PVOID *BaseAddress,
+	IN OUT PULONG NumberOfBytesToProtect,
+	IN ULONG NewAccessProtection,
+	OUT PULONG OldAccessProtection
+	);
+
+extern "C"
+NTSTATUS 
+HookedNtAllocateVirtualMemory_7600(
+	IN HANDLE ProcessHandle,
+	IN OUT PVOID *BaseAddress,
+	IN PULONG ZeroBits,
+	IN OUT PSIZE_T RegionSize,
+	IN ULONG AllocationType,
+	IN ULONG Protect);
+
+extern "C"
+NTSTATUS 
+HookedNtProtectVirtualMemory_7600(
+	IN HANDLE ProcessHandle,
+	IN OUT PVOID *BaseAddress,
+	IN OUT PULONG NumberOfBytesToProtect,
+	IN ULONG NewAccessProtection,
+	OUT PULONG OldAccessProtection);

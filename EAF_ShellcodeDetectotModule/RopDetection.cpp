@@ -307,6 +307,12 @@ DbgReportRop(
 	case CalleeMapViewOfFileEx:
 		SetTextNode( XmlLogNode, 0, "MapViewOfFileEx");
 		break;
+	case CalleeNtAllocateVirtualMemory:
+		SetTextNode(XmlLogNode, 0, "NtAllocateVirtualMemory");
+		break;
+	case CalleeNtProtectVirtualMemory:
+		SetTextNode(XmlLogNode, 0, "NtProtectVirtualMemory");
+		break;
 	}
 
     /* Get the module that used for rop gadgets */
@@ -393,6 +399,10 @@ GetCriticalFunctionAddress(
 		return GetProcAddress(hModule, "HeapCreate");
 	case CalleeWriteProcessMemory:
 		return GetProcAddress(hModule, "WriteProcessMemory");
+	case CalleeNtAllocateVirtualMemory:
+	case CalleeNtProtectVirtualMemory:
+		/* Return the address of KiSystemCall */
+		return (FARPROC)(*(PVOID*)0x7ffe0300);
 	default:
 		return NULL;
 	}
