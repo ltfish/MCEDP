@@ -94,6 +94,7 @@
     <ClInclude Include="GeneralProtections.h" />
     <ClInclude Include="Hash.h" />
     <ClInclude Include="Hook.h" />
+    <ClInclude Include="InsSimulator.h" />
     <ClInclude Include="LdrList.h" />
     <ClInclude Include="LogInfo.h" />
     <ClInclude Include="ModuleAutoInject.h" />
@@ -112,6 +113,7 @@
     <ClCompile Include="ETAV_DebugBreak.cpp" />
     <ClCompile Include="GeneralProtections.cpp" />
     <ClCompile Include="Hash.cpp" />
+    <ClCompile Include="InsSimulator.cpp" />
     <ClCompile Include="MCEDP_Main.cpp" />
     <ClCompile Include="Hook.cpp" />
     <ClCompile Include="inih\ini.c" />

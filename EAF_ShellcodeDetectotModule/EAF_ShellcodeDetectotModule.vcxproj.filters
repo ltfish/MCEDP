@@ -72,6 +72,9 @@
     <ClInclude Include="Hash.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="InsSimulator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PEUtils.cpp">
@@ -144,6 +147,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Hash.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="InsSimulator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

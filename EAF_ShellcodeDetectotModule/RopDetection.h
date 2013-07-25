@@ -5,6 +5,7 @@
 #include "XmlLog.h"
 #include "LogInfo.h"
 #include "ETAV_DebugBreak.h"
+#include "InsSimulator.h"
 #include "distorm\include\distorm.h"
 #include "distorm\include\mnemonics.h"
 #pragma once
@@ -60,12 +61,24 @@ DbgReportRop(
 	IN CONST DWORD APINumber
 	);
 
+BOOL
+CheckCaller(
+	IN ULONG_PTR lpReturningAddress,
+	IN BOOL bExactCheck,
+	IN ROP_CALLEE RopCallee,
+	IN ULONG *GeneralRegisters);
+
 STATUS
-InitializeCriticalFunctionAddressTable(
+InitializeCriticalFunctionDefTable(
 	VOID
 	);
 
 FARPROC
 GetCriticalFunctionAddress(
+	IN ROP_CALLEE RopCallee
+	);
+
+DWORD
+GetCriticalFunctionPoppingDwordsBeforeRet(
 	IN ROP_CALLEE RopCallee
 	);

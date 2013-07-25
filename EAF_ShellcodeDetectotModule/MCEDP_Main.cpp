@@ -175,7 +175,7 @@ SetupShellcodeDetector(
 	}
 
 	/* Prepare the critical function address table */
-	if(InitializeCriticalFunctionAddressTable() != MCEDP_STATUS_SUCCESS)
+	if(InitializeCriticalFunctionDefTable() != MCEDP_STATUS_SUCCESS)
 	{
 		DEBUG_PRINTF(LDBG, NULL, "Error occurs in initializing critical function address table.\n");
 		return MCEDP_STATUS_GENERAL_FAIL;

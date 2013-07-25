@@ -195,6 +195,8 @@ ParsRegConfig(
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "ForwardExecution") ) 
 			{
 				pMcedpRegConfig->ROP.FORWARD_EXECUTION = *pdwFlag;
+				// TODO: Move it to a new option
+				pMcedpRegConfig->ROP.FORWARD_EXECUTION_MAX_INS_COUNT = 30;
 			}
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "FeDept") ) 
 			{
