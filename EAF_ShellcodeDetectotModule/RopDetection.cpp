@@ -1,7 +1,11 @@
 #include "RopDetection.h"
 
+#define GENERAL_REGISTER(x) (&GeneralRegisters)[7 - (x - R_EAX)]
+
 BOOL bRopDetected = FALSE;
 BOOL bRopLoged = FALSE;
+
+FARPROC CriticalFunctionAddress[(DWORD)CalleeMax] = {0};
 
 extern "C"
 VOID
@@ -10,11 +14,7 @@ ValidateCallAgainstRop(
 	IN ROP_CALLEE RopCallee,
 	IN LPVOID lpAddress, 
 	IN DWORD flProtect,
-	IN ULONG uEax,
-	IN ULONG uEcx,
-	IN ULONG uEdx,
-	IN ULONG uEbx,
-	IN ULONG uEsi
+	IN ULONG GeneralRegisters /* edi, esi, ebp, esp, ebx, edx, ecx, eax */
 	)
 {
 	PNT_TIB ThreadInfo;
@@ -62,7 +62,7 @@ ValidateCallAgainstRop(
 		if ( MCEDP_REGCONFIG.ROP.CALL_VALIDATION )
 		{
 			/*
-			 * Performing following checks on the callsite
+			 * Performing following checks on the caller
 			 *  - The address of [esp - 4] could not be the starting address of current function,
 			 *	  otherwise this function is reached via retn instead of a call
 			 *	- The returning point must points to an executable space
@@ -100,80 +100,89 @@ ValidateCallAgainstRop(
 					// The target page cannot be executed
 					DbgSetRopFlag();
 					DEBUG_PRINTF(LDBG, NULL, "ROP detected by CALL_VALIDATION, "
-						"the returning address cannot be executed.");
+						"the returning address 0x%08x cannot be executed.\n",
+						lpReturningAddress);
 				}
 			}
 			
 			// Is there a call instruction preceeding to the returning address?
 			// - 'call dword ptr [0xC0DEC0DE]' (6 bytes)
+			// - 'call dword ptr <reg + 32bit_displacement>' (6 bytes)
 			// - 'call 0xC0DEC0DE' (5 bytes)
-			// - 'call <reg>' (2 bytes)
+			// - 'call dword ptr <reg>' (2 bytes)
+			// - 'call dword ptr <reg + 8bit_displacement>' (3 bytes)
+			// - 'call dword ptr <reg1 + reg2 + 8bit_displacement>' (4 bytes)
+			// - 'call dword ptr <reg1 + reg2 + 32bit_displacement>' (7 bytes)
 			BOOL bCheckPassed = FALSE;
+			CONST DWORD CallInstructionLength[] = {6, 5, 2, 3, 4, 7};
+			CONST DWORD dwMaxInstructions = 7;
+			_DInst decodedInstructions[dwMaxInstructions]; /* There might be 7 instructions in all */
+			DWORD decodedInstructionsCount = 0;
+			_CodeInfo ci;
 
-			if(*(WORD*)(lpReturningAddress - 6) == 0x15ff)
+			for(DWORD i = 0; 
+				i < sizeof(CallInstructionLength) / sizeof(DWORD); 
+				++i)
 			{
-				ULONG_PTR lpCallingTarget = *(*(ULONG_PTR**)(lpReturningAddress - 4));
+				ci.code = (BYTE*)(lpReturningAddress - CallInstructionLength[i]);
+				ci.codeLen = CallInstructionLength[i];
+				ci.codeOffset = 0;
+				ci.dt = Decode32Bits;
+				ci.features = DF_NONE;
+				distorm_decompose(&ci, 
+					decodedInstructions, 
+					dwMaxInstructions,
+					(unsigned int*)&decodedInstructionsCount);
+
+				if(decodedInstructionsCount != 1 ||
+					decodedInstructions[0].flags == FLAG_NOT_DECODABLE)
+				{
+					continue;
+				}
+
+				ULONG_PTR lpCallingTarget = 0;
+
+				if(decodedInstructions[0].opcode == I_CALL)
+				{
+					_DInst* pInstr = &decodedInstructions[0];
+					/* Single operand only for call instructions */
+					switch(pInstr->ops[0].type)
+					{
+					case O_REG:
+						lpCallingTarget = GENERAL_REGISTER(pInstr->ops[0].index);
+						break;
+					case O_SMEM:
+						lpCallingTarget = 
+							*(ULONG_PTR*)(GENERAL_REGISTER(pInstr->ops[0].index) + pInstr->disp);
+						break;
+					case O_MEM:
+						lpCallingTarget = *(ULONG_PTR*)
+							(
+								GENERAL_REGISTER(pInstr->base) /* base */
+								+ GENERAL_REGISTER(pInstr->ops[0].index) * pInstr->scale /* index and scale */
+								+ pInstr->disp /* displacement */
+							);
+						break;
+					case O_PC:
+						lpCallingTarget = INSTRUCTION_GET_TARGET(pInstr);
+						break;
+					case O_DISP:
+						lpCallingTarget = *(ULONG_PTR*)(pInstr->disp);
+						break;
+					default:
+						DEBUG_PRINTF(LDBG, NULL, "Error occurs in CALL_VALIDATION. Operand type = %x.\n",
+							pInstr->ops[0].type);
+						break;
+					}
+				}
+
+				/* TODO: Handle those more complicated cases, like jmp and so on */
+
 				if(lpCallingTarget == 
 					(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
 				{
 					bCheckPassed = TRUE;
-				}
-				else
-				{
-					/* We don't set the ROP flag here, as it might be a call eax instruction */
-				}
-			}
-
-			if(!bCheckPassed && 
-				*(BYTE*)(lpReturningAddress - 5) == 0xeb)
-			{
-				ULONG_PTR lpCallingTarget = *(ULONG_PTR*)(lpReturningAddress - 4);
-				if(lpCallingTarget == 
-					(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
-				{
-					bCheckPassed = TRUE;
-				}
-				else
-				{
-					/* We don't set the ROP flag here, as it might be a call eax instruction */
-				}
-			}
-
-			if(!bCheckPassed &&
-				*(BYTE*)(lpReturningAddress - 2) == 0xff)
-			{
-				BYTE TargetReg = *(BYTE*)(lpReturningAddress - 1);
-				ULONG_PTR lpCallingTarget;
-				switch(TargetReg)
-				{
-				case 0xd0:
-					/* eax */
-					lpCallingTarget = uEax;
 					break;
-				case 0xd1:
-					/* ecx */
-					lpCallingTarget = uEcx;
-					break;
-				case 0xd2:
-					/* edx */
-					lpCallingTarget = uEdx;
-					break;
-				case 0xd3:
-					/* ebx */
-					lpCallingTarget = uEbx;
-					break;
-				case 0xd6:
-					/* esi */
-					lpCallingTarget = uEsi;
-					break;
-				default:
-					lpCallingTarget = 0xffffffff;
-					break;
-				}
-				if(lpCallingTarget == 
-					(ULONG_PTR)GetCriticalFunctionAddress(RopCallee))
-				{
-					bCheckPassed = TRUE;
 				}
 			}
 
@@ -182,7 +191,7 @@ ValidateCallAgainstRop(
 				/* Set ROP flag */
 				DbgSetRopFlag();
 				DEBUG_PRINTF(LDBG, NULL, "ROP detected by CALL_VALIDATION, "
-					"the returning address %08x is not preceeded by a valid call instruction.",
+					"the returning address 0x%08x is not preceeded by a valid call instruction.\n",
 					lpReturningAddress);
 			}
 		}
@@ -374,36 +383,42 @@ DbgReportRop(
 	LocalFree(szRopInst);
 }
 
+STATUS
+InitializeCriticalFunctionAddressTable(
+	VOID
+	)
+{
+	HMODULE hModule = LoadLibrary("Kernel32.dll");
+	if(hModule == NULL)
+	{
+		return MCEDP_STATUS_INTERNAL_ERROR;
+	}
+	CriticalFunctionAddress[(DWORD)CalleeVirtualAlloc] = GetProcAddress(hModule, "VirtualAlloc");
+	CriticalFunctionAddress[(DWORD)CalleeVirtualAllocEx] = GetProcAddress(hModule, "VirtualAllocEx");
+	CriticalFunctionAddress[(DWORD)CalleeVirtualProtect] = GetProcAddress(hModule, "VirtualProtect");
+	CriticalFunctionAddress[(DWORD)CalleeVirtualProtectEx] = GetProcAddress(hModule, "VirtualProtectEx");
+	CriticalFunctionAddress[(DWORD)CalleeMapViewOfFile] = GetProcAddress(hModule, "MapViewOfFile");
+	CriticalFunctionAddress[(DWORD)CalleeMapViewOfFileEx] = GetProcAddress(hModule, "MapViewOfFileEx");
+	CriticalFunctionAddress[(DWORD)CalleeHeapCreate] = GetProcAddress(hModule, "HeapCreate");
+	CriticalFunctionAddress[(DWORD)CalleeWriteProcessMemory] = GetProcAddress(hModule, "WriteProcessMemory");
+	CriticalFunctionAddress[(DWORD)CalleeNtAllocateVirtualMemory] = (FARPROC)(*(PVOID*)0x7ffe0300);
+	CriticalFunctionAddress[(DWORD)CalleeNtProtectVirtualMemory] = (FARPROC)(*(PVOID*)0x7ffe0300);
+
+	return MCEDP_STATUS_SUCCESS;
+}
+
+
 FARPROC
 GetCriticalFunctionAddress(
 	IN ROP_CALLEE RopCallee
 	)
 {
-	// TODO: Make it a table-lookup approach
-	HMODULE hModule = LoadLibrary("Kernel32.dll");
-	switch(RopCallee)
+	if((DWORD)RopCallee < (DWORD)CalleeMax)
 	{
-	case CalleeVirtualAlloc:
-		return GetProcAddress(hModule, "VirtualAlloc");
-	case CalleeVirtualAllocEx:
-		return GetProcAddress(hModule, "VirtualAllocEx");
-	case CalleeVirtualProtect:
-		return GetProcAddress(hModule, "VirtualProtect");
-	case CalleeVirtualProtectEx:
-		return GetProcAddress(hModule, "VirtualProtectEx");
-	case CalleeMapViewOfFile:
-		return GetProcAddress(hModule, "MapViewOfFile");
-	case CalleeMapViewOfFileEx:
-		return GetProcAddress(hModule, "MapViewOfFileEx");
-	case CalleeHeapCreate:
-		return GetProcAddress(hModule, "HeapCreate");
-	case CalleeWriteProcessMemory:
-		return GetProcAddress(hModule, "WriteProcessMemory");
-	case CalleeNtAllocateVirtualMemory:
-	case CalleeNtProtectVirtualMemory:
-		/* Return the address of KiSystemCall */
-		return (FARPROC)(*(PVOID*)0x7ffe0300);
-	default:
+		return CriticalFunctionAddress[RopCallee];
+	}
+	else
+	{
 		return NULL;
 	}
 }

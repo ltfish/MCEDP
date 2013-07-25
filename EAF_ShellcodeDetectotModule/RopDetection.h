@@ -5,6 +5,8 @@
 #include "XmlLog.h"
 #include "LogInfo.h"
 #include "ETAV_DebugBreak.h"
+#include "distorm\include\distorm.h"
+#include "distorm\include\mnemonics.h"
 #pragma once
 
 extern MCEDPREGCONFIG MCEDP_REGCONFIG;
@@ -21,7 +23,8 @@ typedef enum _ROP_CALLEE {
 	CalleeHeapCreate			= 6,
 	CalleeWriteProcessMemory	= 7,
 	CalleeNtAllocateVirtualMemory = 8,
-	CalleeNtProtectVirtualMemory = 9
+	CalleeNtProtectVirtualMemory = 9,
+	CalleeMax					= 10 /* A pseudo entry */
 } ROP_CALLEE;
 
 extern "C"
@@ -31,11 +34,7 @@ ValidateCallAgainstRop(
 	IN ROP_CALLEE RopCallee,
 	IN LPVOID lpAddress, 
 	IN DWORD flProtect,
-	IN ULONG uEax,
-	IN ULONG uEcx,
-	IN ULONG uEdx,
-	IN ULONG uEbx,
-	IN ULONG uEsi
+	IN ULONG GeneralRegisters
 	);
 
 STATUS
@@ -59,6 +58,11 @@ VOID
 DbgReportRop(
 	IN CONST PVOID Address,
 	IN CONST DWORD APINumber
+	);
+
+STATUS
+InitializeCriticalFunctionAddressTable(
+	VOID
 	);
 
 FARPROC

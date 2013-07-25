@@ -88,7 +88,7 @@ ShuDumpShellcode(
 		return MCEDP_STATUS_INTERNAL_ERROR;
 	}
 
-	DEBUG_PRINTF(LDBG, NULL, "Shellcode Dumped from (0x%p -- 0x%p) Size ( 0x%p )\n", lpStartAddress, lpEndAddress, ((DWORD)lpEndAddress - (DWORD)lpStartAddress));
+	DEBUG_PRINTF(LDBG, NULL, "Shellcode dumped from (0x%p -- 0x%p) Size ( 0x%p )\n", lpStartAddress, lpEndAddress, ((DWORD)lpEndAddress - (DWORD)lpStartAddress));
 
     /* log and dump disassembled version of in-memory shelloce */
 	status = ShuDisassembleShellcode( lpStartAddress, lpStartAddress, ((DWORD)lpEndAddress - (DWORD)lpStartAddress));

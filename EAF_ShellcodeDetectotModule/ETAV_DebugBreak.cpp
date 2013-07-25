@@ -52,7 +52,7 @@ DbgExceptionHandler(
 				if ( MCEDP_REGCONFIG.SHELLCODE.KILL_SHELLCODE )
 					TerminateProcess(GetCurrentProcess(), STATUS_ACCESS_VIOLATION);
 
-				/* If DEUMP_SHELLCODE is set, dump raw (binary) and dissembled shellcode in log directory */
+				/* If DUMP_SHELLCODE is set, dump raw (binary) and dissembled shellcode in log directory */
 				if ( MCEDP_REGCONFIG.SHELLCODE.DUMP_SHELLCODE )
 					ShuDumpShellcode(ExceptionInfo->ExceptionRecord->ExceptionAddress);
 

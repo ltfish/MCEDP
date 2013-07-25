@@ -11,6 +11,7 @@
 #include "LogInfo.h"
 #include "ETAV_DebugBreak.h"
 #include "GeneralProtections.h"
+#include "RopDetection.h"
 #include "Hash.h"
 #include <Psapi.h>
 #pragma comment(lib, "Psapi.lib")
@@ -171,6 +172,13 @@ SetupShellcodeDetector(
 			if ( !MCEDP_REGCONFIG.SKIP_HBP_ERROR )
 				return MCEDP_STATUS_GENERAL_FAIL;
 		}
+	}
+
+	/* Prepare the critical function address table */
+	if(InitializeCriticalFunctionAddressTable() != MCEDP_STATUS_SUCCESS)
+	{
+		DEBUG_PRINTF(LDBG, NULL, "Error occurs in initializing critical function address table.\n");
+		return MCEDP_STATUS_GENERAL_FAIL;
 	}
 
 	/* hook functions! */
