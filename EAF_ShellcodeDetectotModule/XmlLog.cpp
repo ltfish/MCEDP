@@ -38,7 +38,7 @@ SaveXml(
 	CHAR szShellcodeFile[MAX_PATH];
 
 	strncpy(szLogDir, MCEDP_REGCONFIG.LOG_PATH, MAX_PATH);
-	sprintf(szShellcodeFile, "\\ShellocdeAnalysis.xml");
+	sprintf(szShellcodeFile, "\\ShellcodeAnalysis.xml");
 	strncat(szLogDir, szShellcodeFile , MAX_PATH);
 
     fp = fopen(szLogDir, "w");
