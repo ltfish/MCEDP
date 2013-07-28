@@ -1,6 +1,6 @@
 #include "RopDetection.h"
 
-#define GENERAL_REGISTER(x) GeneralRegisters[7 - (x - R_EAX)]
+#define GENERAL_REGISTER(x) pGeneralRegisters[7 - (x - R_EAX)]
 
 BOOL bRopDetected = FALSE;
 BOOL bRopLoged = FALSE;
@@ -129,16 +129,40 @@ ValidateCallAgainstRop(
 		if ( MCEDP_REGCONFIG.ROP.FORWARD_EXECUTION )
 		{
 			/* Start simulation from the ret of current call */
-			
-			if(SimulateExecution(
+			ULONG* pGeneralRegisters = &GeneralRegisters;
+			STATUS statSimulation;
+			if((statSimulation = SimulateExecution(
 				*(ULONG_PTR*)lpEspAddress,
 				lpEspAddress, 
+				GENERAL_REGISTER(R_EBP),
 				GetCriticalFunctionPoppingDwordsBeforeRet(RopCallee)
-				) == MCEDP_STATUS_POSSIBLE_ROP_CHAIN)
+				)) == MCEDP_STATUS_POSSIBLE_ROP_CHAIN)
 			{
 				/* Set ROP flag */
 				DbgSetRopFlag();
 				DEBUG_PRINTF(LDBG, NULL, "ROP detected by FORWARD_EXECUTION\n");
+			}
+			else if(statSimulation != MCEDP_STATUS_SUCCESS)
+			{
+				/* Other errors occured */
+				switch(statSimulation)
+				{
+				case MCEDP_STATUS_INSUFFICIENT_BUFFER:
+					DEBUG_PRINTF(LDBG, NULL, "FORWARD_EXECUTION returns MCEDP_STATUS_INSUFFICIENT_BUFFER, "
+						"the stack space is not enough.\n");
+					break;
+				case MCEDP_STATUS_INTERNAL_ERROR:
+					DEBUG_PRINTF(LDBG, NULL, "FORWARD_EXECUTION returns MCEDP_STATUS_INTERNAL_ERROR.\n");
+					break;
+				case MCEDP_ERROR_NOT_DECODABLE:
+					DEBUG_PRINTF(LDBG, NULL, "FORWARD_EXECUTION returns MCEDP_ERROR_NOT_DECODABLE, "
+						"we came across an undecodable instruction.\n");
+					break;
+				default:
+					DEBUG_PRINTF(LDBG, NULL, "FORWARD_EXECUTION returns %x.\n",
+						statSimulation);
+					break;
+				}
 			}
 		}
 
@@ -339,7 +363,7 @@ CheckCaller(
 	IN ULONG_PTR lpReturningAddress,
 	IN BOOL bExactCheck,
 	IN ROP_CALLEE RopCallee,
-	IN ULONG *GeneralRegisters)
+	IN ULONG *pGeneralRegisters)
 {
 	CONST DWORD CallInstructionLength[] = {6, 5, 2, 3, 4, 7};
 	CONST DWORD dwMaxInstructions = 7;

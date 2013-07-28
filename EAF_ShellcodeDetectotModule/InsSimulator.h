@@ -23,5 +23,6 @@ STATUS
 SimulateExecution(
 	IN ULONG_PTR uEip,
 	IN ULONG_PTR uEsp,
+	IN ULONG_PTR uEbp,
 	IN DWORD dwDwordsToPop
 	);

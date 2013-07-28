@@ -5,11 +5,26 @@
 
 /* helper macros */
 #define STACK(x) SimulatedStack[(MAX_STACK_SIZE - (dwStackBase - x)) / 4]
-#define POP_STACK() STACK(c.GeneralReg.esp); \
-	c.GeneralReg.esp += 4;
-#define PUSH_STACK(x) c.GeneralReg.esp -= 4; \
-	STACK(c.GeneralReg.esp) = x;
-#define GENERAL_REGISTER(x) ((DWORD*)&c.GeneralReg)[7 - (x - R_EAX)]
+#define STACK_SANITY_CHECK() StackSanityCheck(dwStackBase, c.GeneralReg.esp)
+#define POP_STACK_DWORD() (STACK_SANITY_CHECK() ? STACK(c.GeneralReg.esp) : 0); \
+	c.GeneralReg.esp += 4; \
+	if(!STACK_SANITY_CHECK()) { \
+		return MCEDP_STATUS_INSUFFICIENT_BUFFER; \
+	}
+#define PUSH_STACK_DWORD(x) c.GeneralReg.esp -= 4; \
+	if(!STACK_SANITY_CHECK()) \
+	{ \
+		return MCEDP_STATUS_INSUFFICIENT_BUFFER; \
+	} \
+	else \
+	{ \
+		STACK(c.GeneralReg.esp) = x; \
+	}
+#define GENERAL_REGISTER_32Bit(x) ((DWORD*)&c.GeneralReg)[7 - (x - R_EAX)] /* w/out any checks */
+#define GENERAL_REGISTER(x) ((x >= R_EAX && x <= R_EDI) ? \
+	((DWORD*)&c.GeneralReg)[7 - (x - R_EAX)] : \
+	0)
+#define GET_DWORD(x) *(DWORD*)(x)
 
 struct _GENERAL_REG
 {
@@ -32,10 +47,27 @@ typedef struct _CPU_REGISTERS
 
 DWORD SimulatedStack[MAX_STACK_SIZE / 4];
 
+BOOL
+StackSanityCheck(
+	DWORD dwStackBase,
+	DWORD dwCurrentEsp
+	)
+{
+	if(dwStackBase - dwCurrentEsp < MAX_STACK_SIZE)
+	{
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}
+}
+
 STATUS
 SimulateExecution(
 	IN ULONG_PTR uEip,
 	IN ULONG_PTR uEsp,
+	IN ULONG_PTR uEbp,
 	IN DWORD dwDwordsToPop
 	)
 {
@@ -65,6 +97,7 @@ SimulateExecution(
 		if(!VirtualQuery((VOID*)uEsp, &MemInfo, sizeof(MemInfo)))
 		{
 			DEBUG_PRINTF(LDBG, NULL, "Error in calling VirtualQuery() in SimulateExecution().\n");
+			return MCEDP_STATUS_INTERNAL_ERROR;
 		}
 		else
 		{
@@ -86,6 +119,7 @@ SimulateExecution(
 	memset(&c, 0, sizeof(c));
 	c.eip = uEip;
 	c.GeneralReg.esp = uEsp;
+	c.GeneralReg.ebp = uEbp;
 
 	/* a trick ;) */
 	DecodedIns.opcode = I_RET;
@@ -124,10 +158,10 @@ SimulateExecution(
 					return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
 				}
 
-				c.eip = POP_STACK();
+				c.eip = POP_STACK_DWORD();
 				for(i = 0; i < DecodedIns.imm.qword; ++i)
 				{
-					POP_STACK();
+					POP_STACK_DWORD();
 				}
 			}
 			break;
@@ -136,7 +170,7 @@ SimulateExecution(
 				DecodedIns.ops[0].index <= R_EDI)
 			{
 				/* 32bit general registers */
-				GENERAL_REGISTER(DecodedIns.ops[0].index) = POP_STACK();
+				GENERAL_REGISTER_32Bit(DecodedIns.ops[0].index) = POP_STACK_DWORD();
 			}
 			else
 			{
@@ -149,13 +183,79 @@ SimulateExecution(
 				DecodedIns.ops[0].index <= R_EDI)
 			{
 				/* 32bit general registers */
-				PUSH_STACK(GENERAL_REGISTER(DecodedIns.ops[0].index));
+				PUSH_STACK_DWORD(GENERAL_REGISTER_32Bit(DecodedIns.ops[0].index));
 			}
 			else
 			{
 				// TODO
 			}
 			c.eip += DecodedIns.size;
+			break;
+		case I_ADD:
+			if(DecodedIns.ops[0].type == O_REG &&
+				DecodedIns.ops[0].index == R_ESP)
+			{
+				if(DecodedIns.ops[1].type == O_IMM)
+				{
+					// add esp, <imm>
+					c.GeneralReg.esp += DecodedIns.imm.dword;
+				}
+				else if(DecodedIns.ops[1].type == O_REG)
+				{
+					// add esp, <reg>
+					c.GeneralReg.esp += GENERAL_REGISTER(DecodedIns.ops[1].index);
+				}
+				else if(DecodedIns.ops[1].type == O_SMEM)
+				{
+					c.GeneralReg.esp += GET_DWORD(GENERAL_REGISTER(DecodedIns.ops[1].index));
+				}
+				else if(DecodedIns.ops[1].type == O_MEM)
+				{
+					c.GeneralReg.esp += GET_DWORD(GENERAL_REGISTER(DecodedIns.base) + 
+						GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + DecodedIns.disp);
+				}
+			}
+			break;
+		case I_SUB:
+			if(DecodedIns.ops[0].type == O_REG &&
+				DecodedIns.ops[0].index == R_ESP)
+			{
+				if(DecodedIns.ops[1].type == O_IMM)
+				{
+					// sub esp, <imm>
+					c.GeneralReg.esp -= DecodedIns.imm.dword;
+				}
+				else if(DecodedIns.ops[1].type == O_REG)
+				{
+					// sub esp, <reg>
+					c.GeneralReg.esp -= GENERAL_REGISTER(DecodedIns.ops[1].index);
+				}
+				else if(DecodedIns.ops[1].type == O_SMEM)
+				{
+					// sub esp, [reg]
+					c.GeneralReg.esp -= GET_DWORD(GENERAL_REGISTER(DecodedIns.ops[1].index));
+				}
+				else if(DecodedIns.ops[1].type == O_MEM)
+				{
+					// sub esp, [base + index * scale + disp]
+					c.GeneralReg.esp -= GET_DWORD(GENERAL_REGISTER(DecodedIns.base) + 
+						GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + DecodedIns.disp);
+				}
+			}
+			break;
+		case I_INC:
+			if(DecodedIns.ops[0].type == O_REG &&
+				DecodedIns.ops[0].index == R_ESP)
+			{
+				++c.GeneralReg.esp;
+			}
+			break;
+		case I_DEC:
+			if(DecodedIns.ops[0].type == O_REG &&
+				DecodedIns.ops[0].index == R_ESP)
+			{
+				--c.GeneralReg.esp;
+			}
 			break;
 		case I_JMP: case I_JMP_FAR: case I_JZ: case I_JNZ: case I_JA: case I_JAE:
 		case I_JB: case I_JBE: case I_JG: case I_JGE: case I_JL: case I_JLE:
@@ -166,6 +266,7 @@ SimulateExecution(
 		default:
 			/* simply step over! */
 			c.eip += DecodedIns.size;
+			break;
 		}
 
 		if(bBreakSimulation)
@@ -180,6 +281,7 @@ SimulateExecution(
 			break;
 		}
 
+		/* Decode the next instruction */
 		ci.code = (BYTE*)c.eip;
 		ci.codeLen = 16;
 		ci.codeOffset = 0;
