@@ -138,7 +138,7 @@ ParsRegConfig(
 			}			
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "MalwareDownload") ) 
 			{
-				pMcedpRegConfig->SHELLCODE.ALLOW_MALWARE_DWONLOAD = *pdwFlag;
+				pMcedpRegConfig->SHELLCODE.ALLOW_MALWARE_DOWNLOAD = *pdwFlag;
 			}			
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "KillShellcode") ) 
 			{
@@ -196,11 +196,11 @@ ParsRegConfig(
 			{
 				pMcedpRegConfig->ROP.FORWARD_EXECUTION = *pdwFlag;
 				// TODO: Move it to a new option
-				pMcedpRegConfig->ROP.FORWARD_EXECUTION_MAX_INS_COUNT = 30;
+				pMcedpRegConfig->ROP.FE_MAX_INS_COUNT = 30;
 			}
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "FeDept") ) 
 			{
-				pMcedpRegConfig->ROP.FE_FAR = *pdwFlag;
+				pMcedpRegConfig->ROP.FE_MAX_DEPTH = *pdwFlag;
 			}
 			else if ( MATCH_CONF(AppRegConfig[i].ve_valuename, "StackMonitoring") ) 
 			{

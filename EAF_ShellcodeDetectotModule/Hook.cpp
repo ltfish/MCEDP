@@ -355,7 +355,7 @@ HookedURLDownloadToFileW(
 		/* save */
 		SaveXml( XmlLog );
 
-		if ( MCEDP_REGCONFIG.SHELLCODE.ALLOW_MALWARE_DWONLOAD == FALSE )
+		if ( MCEDP_REGCONFIG.SHELLCODE.ALLOW_MALWARE_DOWNLOAD == FALSE )
 			return S_OK;
 
 		LocalFree(szUrlA);

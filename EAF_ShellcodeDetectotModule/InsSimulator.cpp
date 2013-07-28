@@ -82,6 +82,7 @@ SimulateExecution(
 	MEMORY_BASIC_INFORMATION MemInfo = {0};
 	BOOL bBreakSimulation = FALSE;
 	DWORD dwBytesToCopy = 0;
+	DWORD dwExecutionDepth = 0;
 
 	ThreadInfo = (PNT_TIB)__readfsdword(0x18);
 	dwStackBase = (DWORD)ThreadInfo->StackBase;
@@ -163,6 +164,8 @@ SimulateExecution(
 				{
 					POP_STACK_DWORD();
 				}
+
+				++dwExecutionDepth;
 			}
 			break;
 		case I_POP:
@@ -276,7 +279,11 @@ SimulateExecution(
 
 		++dwInsFollowed;
 
-		if(dwInsFollowed >= MCEDP_REGCONFIG.ROP.FORWARD_EXECUTION_MAX_INS_COUNT)
+		if(dwInsFollowed >= MCEDP_REGCONFIG.ROP.FE_MAX_INS_COUNT)
+		{
+			break;
+		}
+		if(dwExecutionDepth >= MCEDP_REGCONFIG.ROP.FE_MAX_DEPTH)
 		{
 			break;
 		}
