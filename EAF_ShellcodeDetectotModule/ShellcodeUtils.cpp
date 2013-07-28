@@ -90,7 +90,7 @@ ShuDumpShellcode(
 
 	DEBUG_PRINTF(LDBG, NULL, "Shellcode dumped from (0x%p -- 0x%p) Size ( 0x%p )\n", lpStartAddress, lpEndAddress, ((DWORD)lpEndAddress - (DWORD)lpStartAddress));
 
-    /* log and dump disassembled version of in-memory shelloce */
+    /* log and dump disassembled version of in-memory shellcode */
 	status = ShuDisassembleShellcode( lpStartAddress, lpStartAddress, ((DWORD)lpEndAddress - (DWORD)lpStartAddress));
 	if ( status == MCEDP_STATUS_SUCCESS )
 		DEBUG_PRINTF(LDBG, NULL, "Shellcode disassembled successfully!\n");
