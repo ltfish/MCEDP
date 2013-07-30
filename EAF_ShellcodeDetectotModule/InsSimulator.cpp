@@ -58,11 +58,14 @@ StackSanityCheck(
 	DWORD dwCurrentEsp
 	)
 {
-	/* Check whether esp is still within the stack limit */
-	if(!(dwCurrentEsp < dwStackBase && 
-		dwCurrentEsp >= dwStackLimit))
+	if(MCEDP_REGCONFIG.ROP.STACK_MONITOR)
 	{
-		return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
+		/* Check whether esp is still within the stack limit */
+		if(!(dwCurrentEsp < dwStackBase && 
+			dwCurrentEsp >= dwStackLimit))
+		{
+			return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
+		}
 	}
 
 	/* For safety: check whether esp is still within our simulating stack */
@@ -110,19 +113,24 @@ SimulateExecution(
 	else
 	{
 		/* stack might be changed to another memory region! */
-		return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
-		// TODO: Remove the following codes
-		/*
-		if(!VirtualQuery((VOID*)uEsp, &MemInfo, sizeof(MemInfo)))
+		if(MCEDP_REGCONFIG.ROP.STACK_MONITOR)
 		{
-			DEBUG_PRINTF(LDBG, NULL, "Error in calling VirtualQuery() in SimulateExecution().\n");
-			return MCEDP_STATUS_INTERNAL_ERROR;
+			return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
 		}
 		else
 		{
-			dwStackBase = (DWORD)MemInfo.BaseAddress + MemInfo.RegionSize;
-			dwBytesToCopy = dwStackBase - uEsp;
-		}*/
+			if(!VirtualQuery((VOID*)uEsp, &MemInfo, sizeof(MemInfo)))
+			{
+				DEBUG_PRINTF(LDBG, NULL, "Error in calling VirtualQuery() in SimulateExecution().\n");
+				return MCEDP_STATUS_INTERNAL_ERROR;
+			}
+			else
+			{
+				dwStackBase = (DWORD)MemInfo.BaseAddress + MemInfo.RegionSize;
+				dwStackLimit = (DWORD)MemInfo.BaseAddress;
+				dwBytesToCopy = dwStackBase - uEsp;
+			}
+		}
 	}
 	
 	if(dwBytesToCopy >= MAX_STACK_SIZE)
