@@ -5,7 +5,11 @@
 
 /* helper macros */
 #define STACK(x) SimulatedStack[(MAX_STACK_SIZE - (dwStackBase - x)) / 4]
-#define STACK_SANITY_CHECK() StackSanityCheck(dwStackBase, c.GeneralReg.esp)
+#define STACK_SANITY_CHECK() (StackSanityCheck( \
+			dwStackBase, \
+			dwStackLimit, \
+			c.GeneralReg.esp) \
+			== MCEDP_STATUS_SUCCESS)
 #define POP_STACK_DWORD() (STACK_SANITY_CHECK() ? STACK(c.GeneralReg.esp) : 0); \
 	c.GeneralReg.esp += 4; \
 	if(!STACK_SANITY_CHECK()) { \
@@ -47,19 +51,28 @@ typedef struct _CPU_REGISTERS
 
 DWORD SimulatedStack[MAX_STACK_SIZE / 4];
 
-BOOL
+STATUS
 StackSanityCheck(
 	DWORD dwStackBase,
+	DWORD dwStackLimit,
 	DWORD dwCurrentEsp
 	)
 {
+	/* Check whether esp is still within the stack limit */
+	if(!(dwCurrentEsp < dwStackBase && 
+		dwCurrentEsp >= dwStackLimit))
+	{
+		return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
+	}
+
+	/* For safety: check whether esp is still within our simulating stack */
 	if(dwStackBase - dwCurrentEsp < MAX_STACK_SIZE)
 	{
-		return TRUE;
+		return MCEDP_STATUS_SUCCESS;
 	}
 	else
 	{
-		return FALSE;
+		return MCEDP_STATUS_INSUFFICIENT_BUFFER;
 	}
 }
 
@@ -73,6 +86,7 @@ SimulateExecution(
 {
 	PNT_TIB ThreadInfo;
 	DWORD dwStackBase;
+	DWORD dwStackLimit;
 	CPU_REGISTERS c;
 	_DInst DecodedIns;
 	DWORD dwDecodedInstructionsCount = 0;
@@ -86,15 +100,19 @@ SimulateExecution(
 
 	ThreadInfo = (PNT_TIB)__readfsdword(0x18);
 	dwStackBase = (DWORD)ThreadInfo->StackBase;
+	dwStackLimit = (DWORD)ThreadInfo->StackLimit;
 
 	/* Copy the stack */
-	if(uEsp < dwStackBase && uEsp >= (DWORD)ThreadInfo->StackLimit)
+	if(uEsp < dwStackBase && uEsp >= dwStackLimit)
 	{
 		dwBytesToCopy = dwStackBase - uEsp;
 	}
 	else
 	{
 		/* stack might be changed to another memory region! */
+		return MCEDP_STATUS_POSSIBLE_ROP_CHAIN;
+		// TODO: Remove the following codes
+		/*
 		if(!VirtualQuery((VOID*)uEsp, &MemInfo, sizeof(MemInfo)))
 		{
 			DEBUG_PRINTF(LDBG, NULL, "Error in calling VirtualQuery() in SimulateExecution().\n");
@@ -104,7 +122,7 @@ SimulateExecution(
 		{
 			dwStackBase = (DWORD)MemInfo.BaseAddress + MemInfo.RegionSize;
 			dwBytesToCopy = dwStackBase - uEsp;
-		}
+		}*/
 	}
 	
 	if(dwBytesToCopy >= MAX_STACK_SIZE)
@@ -214,10 +232,23 @@ SimulateExecution(
 				}
 				else if(DecodedIns.ops[1].type == O_MEM)
 				{
-					c.GeneralReg.esp += GET_DWORD(GENERAL_REGISTER(DecodedIns.base) + 
-						GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + DecodedIns.disp);
+					if(DecodedIns.base != R_NONE)
+					{
+						c.GeneralReg.esp += GET_DWORD(GENERAL_REGISTER(DecodedIns.base) + 
+							GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + DecodedIns.disp);
+					}
+					else
+					{
+						c.GeneralReg.esp += GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + 
+							DecodedIns.disp;
+					}
+				}
+				else if(DecodedIns.ops[1].type == O_DISP)
+				{
+					c.GeneralReg.esp += GET_DWORD(DecodedIns.disp);
 				}
 			}
+			c.eip += DecodedIns.size;
 			break;
 		case I_SUB:
 			if(DecodedIns.ops[0].type == O_REG &&
@@ -241,10 +272,23 @@ SimulateExecution(
 				else if(DecodedIns.ops[1].type == O_MEM)
 				{
 					// sub esp, [base + index * scale + disp]
-					c.GeneralReg.esp -= GET_DWORD(GENERAL_REGISTER(DecodedIns.base) + 
-						GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + DecodedIns.disp);
+					if(DecodedIns.base != R_NONE)
+					{
+						c.GeneralReg.esp -= GET_DWORD(GENERAL_REGISTER(DecodedIns.base) + 
+							GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + DecodedIns.disp);
+					}
+					else
+					{
+						c.GeneralReg.esp -= GENERAL_REGISTER(DecodedIns.ops[1].index) * DecodedIns.scale + 
+							DecodedIns.disp;
+					}
+				}
+				else if(DecodedIns.ops[1].type == O_DISP)
+				{
+					c.GeneralReg.esp -= GET_DWORD(DecodedIns.disp);
 				}
 			}
+			c.eip += DecodedIns.size;
 			break;
 		case I_INC:
 			if(DecodedIns.ops[0].type == O_REG &&
@@ -252,6 +296,7 @@ SimulateExecution(
 			{
 				++c.GeneralReg.esp;
 			}
+			c.eip += DecodedIns.size;
 			break;
 		case I_DEC:
 			if(DecodedIns.ops[0].type == O_REG &&
@@ -259,6 +304,74 @@ SimulateExecution(
 			{
 				--c.GeneralReg.esp;
 			}
+			c.eip += DecodedIns.size;
+			break;
+		case I_XCHG:
+			{
+				/* Ignore all memory operations other than operations over stack */
+				
+				if(DecodedIns.ops[0].type == O_REG &&
+					DecodedIns.ops[1].type == O_REG &&
+					DecodedIns.ops[0].size == 32 &&
+					DecodedIns.ops[0].index != DecodedIns.ops[1].index)
+				{
+					DWORD dwTmp = GENERAL_REGISTER_32Bit(DecodedIns.ops[0].index);
+					GENERAL_REGISTER_32Bit(DecodedIns.ops[0].index) = 
+						GENERAL_REGISTER_32Bit(DecodedIns.ops[1].index);
+					GENERAL_REGISTER_32Bit(DecodedIns.ops[1].index) = dwTmp;
+				}
+				else if(DecodedIns.ops[0].type == O_REG &&
+					DecodedIns.ops[0].size == 32)
+				{
+					ULONG_PTR pTargetMem = 0;
+					if(DecodedIns.ops[1].type == O_SMEM)
+					{
+						pTargetMem = GENERAL_REGISTER_32Bit(DecodedIns.ops[1].index);
+					}
+					else if(DecodedIns.ops[1].type == O_MEM)
+					{
+						if(DecodedIns.base != R_NONE)
+						{
+							pTargetMem = GENERAL_REGISTER_32Bit(DecodedIns.base) +
+								GENERAL_REGISTER_32Bit(DecodedIns.ops[1].index) * DecodedIns.scale
+								+ DecodedIns.disp;
+						}
+						else
+						{
+							pTargetMem = GENERAL_REGISTER_32Bit(DecodedIns.ops[1].index) * DecodedIns.scale
+								+ DecodedIns.disp;
+						}
+					}
+					else if(DecodedIns.ops[1].type == O_DISP)
+					{
+						pTargetMem = DecodedIns.disp;
+					}
+
+					if(pTargetMem < dwStackBase && 
+						pTargetMem >= dwStackLimit)
+					{
+						/* Accessing the stack */
+						DWORD dwTmp = GENERAL_REGISTER_32Bit(DecodedIns.ops[0].index);
+						GENERAL_REGISTER_32Bit(DecodedIns.ops[0].index) = 
+							STACK(pTargetMem);
+						STACK(pTargetMem) = dwTmp;
+					}
+					else
+					{
+						/* Outside of the stack. Ignore */
+					}
+				}
+			}
+			c.eip += DecodedIns.size;
+			break;
+		case I_LEAVE:
+			{
+				/* mov esp, ebp */
+				c.GeneralReg.esp = c.GeneralReg.ebp;
+				/* pop ebp */
+				c.GeneralReg.ebp = POP_STACK_DWORD();
+			}
+			c.eip += DecodedIns.size;
 			break;
 		case I_JMP: case I_JMP_FAR: case I_JZ: case I_JNZ: case I_JA: case I_JAE:
 		case I_JB: case I_JBE: case I_JG: case I_JGE: case I_JL: case I_JLE:
