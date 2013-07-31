@@ -8,6 +8,7 @@
 #define MEM_EXECUTE_OPTION_DISABLE		0x01
 #define MEM_EXECUTE_OPTION_ENABLE		0x02
 #define MEM_EXECUTE_OPTION_PERMANENT	0x08
+#define MEM_EXECUTE_OPTION_DISABLE_EXCEPTION_CHAIN_VALIDATION	0x40
 #define NT_SUCCESS(Status)				(((NTSTATUS)(Status)) >= 0)
 
 extern MCEDPREGCONFIG MCEDP_REGCONFIG;
@@ -23,6 +24,16 @@ NTSTATUS
 
 typedef
 NTSTATUS
+(NTAPI* NtQueryInformationProcess_)(
+	IN HANDLE ProcessHandle,
+	IN ULONG ProcessInformationClass,
+	OUT PVOID ProcessInformation,
+	IN ULONG ProcessInformationLength,
+	OUT ULONG *ReturnLength
+	);
+
+typedef
+NTSTATUS
 (NTAPI *NtAllocateVirtualMemory_)(
 	__in     HANDLE ProcessHandle,
 	__inout  PVOID *BaseAddress,
@@ -34,7 +45,7 @@ NTSTATUS
 
 STATUS
 EnablePermanentDep(
-	VOID
+	BOOL bDisableExceptionChainValidation
 	);
 
 
@@ -46,4 +57,9 @@ EnableNullPageProtection(
 STATUS
 EnableHeapSprayProtection(
 	IN PCHAR szHeapAddressArray
+	);
+
+STATUS
+EnableExceptionChainValidation(
+	VOID	
 	);

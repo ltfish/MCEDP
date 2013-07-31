@@ -24,7 +24,7 @@ ValidateCallAgainstRop(
 	)
 {
 	PNT_TIB ThreadInfo;
-	
+
 	if ( DbgGetRopFlag() == MCEDP_STATUS_ROP_FLAG_NOT_SET )
 	{
 		/* get the thread stack range from TIB. */
@@ -49,9 +49,9 @@ ValidateCallAgainstRop(
 			{
 				/* if it is going to make the stack executable */
 				if ( ( flProtect & PAGE_EXECUTE )           ||  
-					 ( flProtect & PAGE_EXECUTE_READWRITE ) || 
-					 ( flProtect & PAGE_EXECUTE_READ )      ||
-					 ( flProtect & PAGE_EXECUTE_WRITECOPY ) )
+						( flProtect & PAGE_EXECUTE_READWRITE ) || 
+						( flProtect & PAGE_EXECUTE_READ )      ||
+						( flProtect & PAGE_EXECUTE_WRITECOPY ) )
 				{
 					/* set ROP flag */
 					DbgSetRopFlag();
@@ -68,14 +68,14 @@ ValidateCallAgainstRop(
 		if ( MCEDP_REGCONFIG.ROP.CALL_VALIDATION )
 		{
 			/*
-			 * Performing following checks on the caller
-			 *  - The address of [esp - 4] could not be the starting address of current function,
-			 *	  otherwise this function is reached via retn instead of a call
-			 *	- The returning point must points to an executable space
-			 *  - A 'call' instruction should be existing preceeding to the returning point
-			 *  - Under most cases, the 'call' instruction should (in)directly points to the start
-			 *	  of current function
-			 */
+				* Performing following checks on the caller
+				*  - The address of [esp - 4] could not be the starting address of current function,
+				*	  otherwise this function is reached via retn instead of a call
+				*	- The returning point must points to an executable space
+				*  - A 'call' instruction should be existing preceeding to the returning point
+				*  - Under most cases, the 'call' instruction should (in)directly points to the start
+				*	  of current function
+				*/
 
 			ULONG_PTR* lpPreviousStackPointer = (ULONG_PTR*)(lpEspAddress - sizeof(ULONG));
 			if(*lpPreviousStackPointer == 
@@ -189,8 +189,8 @@ DbgSetRopFlag(
 	/* set the ROP flag */
 	bRopDetected = TRUE;
 
-    /* init log path */
-    if ( InitLogPath( MCEDP_REGCONFIG.LOG_PATH, MAX_PATH ) != MCEDP_STATUS_SUCCESS )
+	/* init log path */
+	if ( InitLogPath( MCEDP_REGCONFIG.LOG_PATH, MAX_PATH ) != MCEDP_STATUS_SUCCESS )
 	{
 		REPORT_ERROR("InitLogPath()", &err);
 		return MCEDP_STATUS_GENERAL_FAIL;

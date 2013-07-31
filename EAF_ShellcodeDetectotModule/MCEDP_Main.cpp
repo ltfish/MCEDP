@@ -121,10 +121,22 @@ SetupShellcodeDetector(
 	/* check if we should enable Permanent DEP mitigation */
 	if ( MCEDP_REGCONFIG.GENERAL.PERMANENT_DEP )
 	{
-		if ( EnablePermanentDep() != MCEDP_STATUS_SUCCESS )
+		if ( EnablePermanentDep(!MCEDP_REGCONFIG.GENERAL.SEHOP) != MCEDP_STATUS_SUCCESS )
 		{
 			REPORT_ERROR("EnablePermanentDep()", &err);
 			return MCEDP_STATUS_GENERAL_FAIL;
+		}
+	}
+	else
+	{
+		/* Check whether we should enable SEHOP separately */
+		if(MCEDP_REGCONFIG.GENERAL.SEHOP)
+		{
+			if(EnableExceptionChainValidation() != MCEDP_STATUS_SUCCESS)
+			{
+				REPORT_ERROR("EnableExceptionChainValidation()", &err);
+				return MCEDP_STATUS_GENERAL_FAIL;
+			}
 		}
 	}
 
